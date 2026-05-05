@@ -44,4 +44,10 @@ class TemporalGraphData:
         sort_idx=torch.argsort(self.edge_index[0])
         self.edge_index=self.edge_index[:,sort_idx]
         self.edge_time=self.edge_time[sort_idx]
+    
+    def get_edge_index(self):
+        return self.edge_index
+
+    def get_edge_time(self):
+        return self.edge_time
 
