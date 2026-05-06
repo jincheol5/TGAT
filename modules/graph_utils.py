@@ -34,18 +34,22 @@ class TemporalGraphData:
         Input:
             batch_events: list of event tuple (src,tar,time)
         Output:
+            batch_tar: [B,1]
+            batch_tar_ts: [B,1]
             batch_n_ft: [B,N,latent_dim]
             batch_n_ts: [B,N,1]
             batch_n_mask: [B,N,]
         """
         max_n=0
+        tar_list=[]
         n_list=[]
         ts_list=[]
         for event in batch_events:
             _,tar,time=event
+            tar_list.append(tar)
             neighbors=[]
             timespans=[]
-            for src,timestamp in self.adj[tar][::-1]: # 역순회
+            for src,timestamp in self.adj.get(tar,[])[::-1]: # 역순회, tar 이웃노드들 없는 경우 [] 반환
                 if src not in neighbors: # 같은 src의 경우 최신 시간값으로 계산
                     neighbors.append(src)
                     timespans.append(abs(time-timestamp))
@@ -59,9 +63,13 @@ class TemporalGraphData:
         batch_n_ts_list=[]
         batch_n_mask_list=[]
         for neighbors,timespans in zip(n_list,ts_list):
-            n_ft_list=[self.node_feature[n] for n in neighbors]
-            n_ft=torch.stack(n_ft_list) # [N,latent_dim]
-            n_ts=torch.tensor(timespans).unsqueeze(-1) # [N,1]
+            if len(neighbors)==0:  # 이웃이 없는 경우 빈 tensor 생성 (형태 정보만 유지)
+                n_ft=torch.zeros((0,self.latent_dim),dtype=torch.float32)
+                n_ts=torch.zeros((0,1),dtype=torch.float32)
+            else:
+                n_ft_list=[self.node_feature[n] for n in neighbors]
+                n_ft=torch.stack(n_ft_list) # [N,latent_dim]
+                n_ts=torch.tensor(timespans,dtype=torch.float32).unsqueeze(-1) # [N,1]
 
             # padding
             if n_ft.size(0)<max_n:
@@ -83,7 +91,9 @@ class TemporalGraphData:
             batch_n_ft_list.append(n_ft)
             batch_n_ts_list.append(n_ts)
             batch_n_mask_list.append(n_mask)
+        batch_tar=torch.tensor(tar_list,dtype=torch.long).unsqueeze(-1) # [B,1]
+        batch_tar_ts=torch.zeros_like(batch_tar,dtype=torch.float32) # [B,1]
         batch_n_ft=torch.stack(batch_n_ft_list) # [B,N,latent_dim]
         batch_n_ts=torch.stack(batch_n_ts_list) # [B,N,1]
         batch_n_mask=torch.stack(batch_n_mask_list) # [B,N,]
-        return batch_n_ft,batch_n_ts,batch_n_mask
+        return batch_tar,batch_tar_ts,batch_n_ft,batch_n_ts,batch_n_mask
