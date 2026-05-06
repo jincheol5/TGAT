@@ -2,52 +2,83 @@ import torch
 
 class TemporalGraphData:
     """
-    node_feature: [N,latent_dim]
-    edge_index: [2,E]
-    edge_time: [E,]
+    node_feature: dict of each node feature
+        key: node_id
+        value: feature tensor
+    adj: dict of each node's neighbor info, sorted by time asc 
+        key: node_id
+        value: list of tuple (src,time)
     """
-    def __init__(self):
-        pass
+    def __init__(self,latent_dim:int=32):
+        self.node_feature={}
+        self.adj={}
+        self.latent_dim=latent_dim
 
-    def update_batch_events(self,batch_events:list):
+    def update_graph(self,batch_events:list):
         """
-        batch_events: list of edge_event tuple (src,tar,time)
+        batch_events: list of event tuple (src,tar,time)
         """
-        # 새로운 batch의 edge 정보 추출
-        src=[e[0] for e in batch_events]
-        tar=[e[1] for e in batch_events]
-        time=[e[2] for e in batch_events]
-        batch_edge_index=torch.tensor([src,tar],dtype=torch.long)
-        batch_edge_time=torch.tensor(time,dtype=torch.long)
-        
-        # 기존 edge_index 존재 여부 확인
-        if hasattr(self,'edge_index') and self.edge_index is not None:
-            # 기존 edge_index와 새로운 batch 합치기
-            self.edge_index=torch.cat([self.edge_index,batch_edge_index],dim=1)
-            self.edge_time=torch.cat([self.edge_time,batch_edge_time],dim=0)
-        else:
-            # 새로 생성
-            self.edge_index=batch_edge_index
-            self.edge_time=batch_edge_time
-        
-        # 중복 제거 (같은 src,tar의 경우 최신 time만 유지)
-        unique_edges={}
-        for event_idx in range(self.edge_index.size(1)):
-            key=(self.edge_index[0,event_idx].item(),self.edge_index[1,event_idx].item()) # key=(src,tar)
-            if key not in unique_edges or self.edge_time[event_idx]>unique_edges[key][1]:
-                unique_edges[key]=(event_idx,self.edge_time[event_idx])
-        unique_indices=torch.tensor([idx for idx,_ in unique_edges.values()],dtype=torch.long)
-        self.edge_index=self.edge_index[:,unique_indices]
-        self.edge_time=self.edge_time[unique_indices]
-        
-        # 첫 번째 행 기준으로 오름차순 정렬
-        sort_idx=torch.argsort(self.edge_index[0])
-        self.edge_index=self.edge_index[:,sort_idx]
-        self.edge_time=self.edge_time[sort_idx]
-    
-    def get_edge_index(self):
-        return self.edge_index
+        for event in batch_events:
+            src,tar,time=event
+            if src not in self.node_feature:
+                self.node_feature[src]=torch.ones(self.latent_dim)
+            if tar not in self.node_feature:
+                self.node_feature[tar]=torch.ones(self.latent_dim)
+            if tar not in self.adj:
+                self.adj[tar]=[]
+            self.adj[tar].append((src,time))
+            self.adj[tar].sort(key=lambda x: x[1])
 
-    def get_edge_time(self):
-        return self.edge_time
+    def get_neighbor_ft(self,batch_events:list):
+        """
+        batch_events: list of event tuple (src,tar,time)
 
+        Returns:
+            neighbor_ft: tensor of shape [B, N, latent_dim]
+            mask: tensor of shape [B, N], where 1 indicates a real neighbor and 0 indicates padding
+
+        N is the maximum number of neighbors among all tar nodes in the batch.
+        """
+        batch_size = len(batch_events)
+        neighbor_lists = []
+        max_neighbors = 0
+
+        for _, tar, _ in batch_events:
+            seen = set()
+            unique_neighbors = []
+            for src, _ in self.adj.get(tar, []):
+                if src not in seen:
+                    seen.add(src)
+                    unique_neighbors.append(src)
+            neighbor_lists.append(unique_neighbors)
+            if len(unique_neighbors) > max_neighbors:
+                max_neighbors = len(unique_neighbors)
+
+        neighbor_ft = torch.zeros((batch_size, max_neighbors, self.latent_dim))
+        mask = torch.zeros((batch_size, max_neighbors), dtype=torch.bool)
+
+        for i, neighbors in enumerate(neighbor_lists):
+            for j, src in enumerate(neighbors):
+                feature = self.node_feature.get(src, torch.zeros(self.latent_dim))
+                neighbor_ft[i, j] = feature
+                mask[i, j] = True
+
+        return neighbor_ft, mask
+
+    def get_timespan_for_embedding(self,batch_events:list):
+        """
+        Input:
+            batch_events: list of event tuple (src,tar,time)
+        Output:
+            tar_timespan: [B,1]
+            neighbor_timespan: [B,N,1]
+        """
+
+    def get_data_for_embedding(self,batch_events:list):
+        """
+        Input:
+            batch_events: list of event tuple (src,tar,time)
+        Output:
+            tar_ft: [B,latent]
+            neighbor_ft: [B,N,latent_dim]
+        """
