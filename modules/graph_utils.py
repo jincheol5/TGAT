@@ -29,7 +29,7 @@ class TemporalGraphData:
         self.adj[tar].append((src,time))
         self.adj[tar].sort(key=lambda x: x[1])
 
-    def get_batch_data_for_embedding(self,batch_events:list):
+    def get_data_for_embedding(self,batch_events:list):
         """
         Input:
             batch_events: list of event tuple (src,tar,time)
