@@ -34,19 +34,23 @@ class TemporalGraphData:
         Input:
             batch_events: list of event tuple (src,tar,time)
         Output:
-            batch_tar: [B,1]
+            batch_tar_ft: [B,latent_dim]
             batch_tar_ts: [B,1]
             batch_n_ft: [B,N,latent_dim]
             batch_n_ts: [B,N,1]
             batch_n_mask: [B,N,]
         """
         max_n=0
-        tar_list=[]
+        tar_ft_list=[]
         n_list=[]
         ts_list=[]
         for event in batch_events:
             _,tar,time=event
-            tar_list.append(tar)
+            if tar not in self.node_feature:
+                tar_ft=torch.ones(self.latent_dim)
+            else:
+                tar_ft=self.node_feature[tar]
+            tar_ft_list.append(tar_ft)
             neighbors=[]
             timespans=[]
             for src,timestamp in self.adj.get(tar,[])[::-1]: # 역순회, tar 이웃노드들 없는 경우 [] 반환
@@ -72,7 +76,8 @@ class TemporalGraphData:
                 n_ts=torch.tensor(timespans,dtype=torch.float32).unsqueeze(-1) # [N,1]
 
             # padding
-            if n_ft.size(0)<max_n:
+            valid_row=n_ft.size(0)
+            if valid_row<max_n:
                 pad_rows=max_n-n_ft.size(0)
                 n_ft_padding=torch.zeros(
                     (pad_rows,n_ft.size(1)),
@@ -87,13 +92,13 @@ class TemporalGraphData:
 
             # padding mask
             n_mask=torch.zeros(max_n,dtype=torch.bool)
-            n_mask[:n_ft.size(0)]=True # [N,]
+            n_mask[:valid_row]=True # [N,]
             batch_n_ft_list.append(n_ft)
             batch_n_ts_list.append(n_ts)
             batch_n_mask_list.append(n_mask)
-        batch_tar=torch.tensor(tar_list,dtype=torch.long).unsqueeze(-1) # [B,1]
-        batch_tar_ts=torch.zeros_like(batch_tar,dtype=torch.float32) # [B,1]
+        batch_tar_ft=torch.stack(tar_ft_list) # [B,latent_dim]
+        batch_tar_ts=torch.zeros((batch_tar_ft.size(0),1),dtype=torch.float32) # [B,1]
         batch_n_ft=torch.stack(batch_n_ft_list) # [B,N,latent_dim]
         batch_n_ts=torch.stack(batch_n_ts_list) # [B,N,1]
         batch_n_mask=torch.stack(batch_n_mask_list) # [B,N,]
-        return batch_tar,batch_tar_ts,batch_n_ft,batch_n_ts,batch_n_mask
+        return batch_tar_ft,batch_tar_ts,batch_n_ft,batch_n_ts,batch_n_mask
