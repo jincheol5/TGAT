@@ -7,6 +7,19 @@ def test_graph_utils(**kwargs):
             """
             Test. TemporalGraphData.update_graph()
             """
+            eventstream=[
+                (2,6,1),
+                (2,5,2),
+                (0,3,3),
+                (0,2,4),
+                (0,1.5),
+                (1,6,5),
+                (0,3,7),
+                (3,6,7),
+                (3,4,8),
+                (0,2,9)
+            ]
+
 
         case 2:
             """

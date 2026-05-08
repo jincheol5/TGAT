@@ -1,104 +1,92 @@
 import torch
+import numpy as np
 
 class TemporalGraphData:
     """
     node_feature: dict of each node feature
         key: node_id
         value: feature tensor
-    adj: dict of each node's neighbor info, sorted by time asc 
+    neighbor: dict of each node's neighbor id list
         key: node_id
-        value: list of tuple (src,time)
+        value: list of neighbor node id
+    ts: dict of each node's neighbor interact timestamp
+        key: node_id
+        value: list of neighbor interact timestamp
     """
     def __init__(self,latent_dim:int=32):
         self.node_feature={}
-        self.adj={}
+        self.neighbor={}
+        self.ts={}
         self.latent_dim=latent_dim
 
     def update_graph(self,event:tuple):
         """
         Input:
-            event: tuple (src,tar,time)
+            event: tuple (src,tar,timestamp)
         """
-        src,tar,time=event
+        src,tar,timestamp=event
         if src not in self.node_feature:
             self.node_feature[src]=torch.ones(self.latent_dim)
         if tar not in self.node_feature:
             self.node_feature[tar]=torch.ones(self.latent_dim)
-        if tar not in self.adj:
-            self.adj[tar]=[]
-        self.adj[tar].append((src,time))
-        self.adj[tar].sort(key=lambda x: x[1])
+        if tar not in self.neighbor:
+            self.neighbor[tar]=[]
+            self.ts[tar]=[]
+        self.neighbor[tar].append(src)
+        self.ts[tar].append(timestamp)
 
-    def get_data_for_embedding(self,batch_events:list):
+    def find_temporal_neighbor(self,tar,cut_time):
         """
-        Input:
-            batch_events: list of event tuple (src,tar,time)
-        Output:
-            batch_tar_ft: [B,latent_dim]
-            batch_tar_ts: [B,1]
-            batch_n_ft: [B,N,latent_dim]
-            batch_n_ts: [B,N,1]
-            batch_n_mask: [B,N,]
         """
-        max_n=0
-        tar_ft_list=[]
-        n_list=[]
-        ts_list=[]
-        for event in batch_events:
-            _,tar,time=event
-            if tar not in self.node_feature:
-                tar_ft=torch.ones(self.latent_dim)
-            else:
-                tar_ft=self.node_feature[tar]
-            tar_ft_list.append(tar_ft)
-            neighbors=[]
-            timespans=[]
-            for src,timestamp in self.adj.get(tar,[])[::-1]: # 역순회, tar 이웃노드들 없는 경우 [] 반환
-                if src not in neighbors: # 같은 src의 경우 최신 시간값으로 계산
-                    neighbors.append(src)
-                    timespans.append(abs(time-timestamp))
-            if max_n<len(neighbors):
-                max_n=len(neighbors)
-            n_list.append(neighbors)
-            ts_list.append(timespans)
-            self.update_graph(event=event) # 현재 event 이전 정보들만 참고할 수 있도록 함
+        if tar not in self.neighbor:
+            return [],[]
+        ts_np=np.array(self.ts[tar])
+        idx=np.searchsorted(ts_np,cut_time)
+        return self.neighbor[tar][:idx],self.ts[tar][:idx]
 
-        batch_n_ft_list=[]
-        batch_n_ts_list=[]
-        batch_n_mask_list=[]
-        for neighbors,timespans in zip(n_list,ts_list):
-            if len(neighbors)==0:  # 이웃이 없는 경우 빈 tensor 생성 (형태 정보만 유지)
-                n_ft=torch.zeros((0,self.latent_dim),dtype=torch.float32)
-                n_ts=torch.zeros((0,1),dtype=torch.float32)
-            else:
-                n_ft_list=[self.node_feature[n] for n in neighbors]
-                n_ft=torch.stack(n_ft_list) # [N,latent_dim]
-                n_ts=torch.tensor(timespans,dtype=torch.float32).unsqueeze(-1) # [N,1]
+    def get_batch_data_for_embedding(self,batch_tar:list,batch_cut_time:list):
+        """
+        Input
+            batch_tar: List of target node id
+            batch_cut_time: List of event timestamp
+        Output
+            batch_n: [B,N]
+            batch_ts: [B,N]
+            batch_timespan: [B,N]
+            batch_n_mask: [B,N]
+            B = batch size
+            N = max neighbor in batch
+        """
+        temporal_n=[
+            self.find_temporal_neighbor(tar=tar,cut_time=cut_time)
+            for tar,cut_time in zip(batch_tar,batch_cut_time)
+        ]
+        n_list=[result[0] for result in temporal_n]
+        ts_list=[result[1] for result in temporal_n]
 
-            # padding
-            valid_row=n_ft.size(0)
-            if valid_row<max_n:
-                pad_rows=max_n-n_ft.size(0)
-                n_ft_padding=torch.zeros(
-                    (pad_rows,n_ft.size(1)),
-                    dtype=n_ft.dtype
-                )
-                n_ft=torch.cat([n_ft,n_ft_padding],dim=0)
-                n_ts_padding=torch.zeros(
-                    (pad_rows,1),
-                    dtype=n_ft.dtype
-                )
-                n_ts=torch.cat([n_ts,n_ts_padding],dim=0)
+        batch_size=len(batch_tar)
+        max_n=max(len(n) for n in n_list)
 
-            # padding mask
-            n_mask=torch.zeros(max_n,dtype=torch.bool)
-            n_mask[:valid_row]=True # [N,]
-            batch_n_ft_list.append(n_ft)
-            batch_n_ts_list.append(n_ts)
-            batch_n_mask_list.append(n_mask)
-        batch_tar_ft=torch.stack(tar_ft_list) # [B,latent_dim]
-        batch_tar_ts=torch.zeros((batch_tar_ft.size(0),1),dtype=torch.float32) # [B,1]
-        batch_n_ft=torch.stack(batch_n_ft_list) # [B,N,latent_dim]
-        batch_n_ts=torch.stack(batch_n_ts_list) # [B,N,1]
-        batch_n_mask=torch.stack(batch_n_mask_list) # [B,N,]
-        return batch_tar_ft,batch_tar_ts,batch_n_ft,batch_n_ts,batch_n_mask
+        batch_n=torch.zeros((batch_size,max_n),dtype=torch.long)
+        batch_ts=torch.zeros((batch_size,max_n),dtype=torch.float32)
+        batch_timespan = torch.zeros((batch_size,max_n),dtype=torch.float32)
+        batch_n_mask=torch.zeros((batch_size,max_n),dtype=torch.bool)
+
+        for idx,(neighbors,timestamps) in enumerate(zip(n_list,ts_list)):
+            n_len=len(neighbors)
+            if n_len==0:
+                continue
+            neighbors_tensor=torch.tensor(neighbors,dtype=torch.long)
+            timestamps_tensor=torch.tensor(timestamps,dtype=torch.float32)
+
+            batch_n[idx,:n_len]=neighbors_tensor
+            batch_ts[idx,:n_len]=timestamps_tensor
+
+            batch_timespan[idx,:n_len]=torch.abs(
+                torch.tensor(batch_cut_time[idx],dtype=torch.float32)
+                -timestamps_tensor
+            )
+            batch_n_mask[idx,:n_len]=True
+        return batch_n,batch_ts,batch_timespan,batch_n_mask
+
+
