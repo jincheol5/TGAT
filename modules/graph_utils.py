@@ -1,6 +1,11 @@
 import torch
 import numpy as np
 
+"""
+To Do List:
+- batch 내의 같은 timestamp 이벤트들에 대해서 구조 정보 어떻게 처리할 지, np.searchsorted 함수 확인해보기 
+
+"""
 class TemporalGraphData:
     """
     node_feature: dict of each node feature
