@@ -46,7 +46,7 @@ class TemporalGraphData:
         if tar not in self.neighbor:
             return [],[]
         ts_np=np.array(self.ts[tar])
-        idx=np.searchsorted(ts_np,cut_time)
+        idx=np.searchsorted(ts_np,cut_time,side="left")
         return self.neighbor[tar][:idx],self.ts[tar][:idx]
 
     def get_batch_data_for_embedding(self,batch_tar:list,batch_cut_time:list):
