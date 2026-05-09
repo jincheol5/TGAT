@@ -36,7 +36,7 @@ class TemporalAttentionLayer(nn.Module):
     def __init__(self,
             latent_dim:int,
             time_dim:int,
-            n_heads:int=1
+            n_head:int=1
         ):
         super().__init__()
         self.latent_dim=latent_dim
@@ -47,7 +47,7 @@ class TemporalAttentionLayer(nn.Module):
             embed_dim=self.qkv_dim,
             kdim=self.qkv_dim,
             vdim=self.qkv_dim,
-            num_heads=n_heads
+            num_heads=n_head
         )
         self.FFN=nn.Sequential(
             nn.Linear(
@@ -132,3 +132,32 @@ class TemporalAttentionLayer(nn.Module):
         ) # -> [B,latent_dim+time_dim||latent_dim]
         output=self.FFN(ffn_input) # [B,latent_dim]
         return output
+
+class GraphEmbedding(nn.Module):
+    def __init__(self,
+            latent_dim:int,
+            time_dim:int,
+            n_head:int=1,
+            n_layer:int=1,
+            data:TemporalGraphData=None
+        ):
+        super().__init__()
+        self.data=data
+        self.attn_layers=torch.nn.ModuleList([
+            TemporalAttentionLayer(
+                latent_dim=latent_dim,
+                time_dim=time_dim,
+                n_head=n_head
+            )
+        for _ in range(n_layer)])
+
+    def compute_embedding(self,batch_tar,n_layer):
+        """
+        Input:
+            batch_tar
+            n_layer
+        """
+    
+    def aggregate(self):
+        """
+        """
