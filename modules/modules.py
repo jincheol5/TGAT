@@ -31,7 +31,6 @@ class TimeEncoder(nn.Module):
         output=torch.cos(self.w(timespan)) # [B,time_dim] or [B,N,time_dim]
         return output
 
-
 class TemporalAttentionLayer(nn.Module):
     def __init__(self,
             latent_dim:int,
@@ -63,35 +62,35 @@ class TemporalAttentionLayer(nn.Module):
 
     def forward(self,
             tar_ft:torch.Tensor,
-            tar_t_ft:torch.Tensor,
+            tar_ts_ft:torch.Tensor,
             n_ft:torch.Tensor,
-            n_t_ft:torch.Tensor,
+            n_ts_ft:torch.Tensor,
             n_mask:torch.Tensor
         ):
         """
         Input:
             tar_ft: [B,latent_dim]
-            tar_t_ft: [B,time_dim]
+            tar_ts_ft: [B,time_dim]
             n_ft: [B,N,latent_dim]
-            n_t_ft: [B,N,time_dim]
+            n_ts_ft: [B,N,time_dim]
             n_mask: [B,N], True = valid neighbor
         Output:
 
         """
         ### set init
-        tar_ft=tar_ft.unsqueeze(tar_ft,dim=1) # -> [B,1,latent_dim]
-        tar_t_ft=tar_t_ft.unsqueeze(tar_t_ft,dim=1) # -> [B,1,time_dim]
+        tar_ft=tar_ft.unsqueeze(dim=1) # -> [B,1,latent_dim]
+        tar_ts_ft=tar_ts_ft.unsqueeze(dim=1) # -> [B,1,time_dim]
 
         query=torch.cat(
-            [tar_ft,tar_t_ft],
+            [tar_ft,tar_ts_ft],
             dim=2
         ) # -> [B,1,latent_dim+time_dim]
         key=torch.cat(
-            [n_ft,n_t_ft],
+            [n_ft,n_ts_ft],
             dim=2
         ) # -> [B,N,latent_dim+time_dim]
         value=torch.cat(
-            [n_ft,n_t_ft],
+            [n_ft,n_ts_ft],
             dim=2
         ) # -> [B,N,latent_dim+time_dim]
 
@@ -135,6 +134,7 @@ class TemporalAttentionLayer(nn.Module):
 
 class GraphEmbedding(nn.Module):
     def __init__(self,
+            node_dim:int,
             latent_dim:int,
             time_dim:int,
             n_head:int=1,
@@ -142,22 +142,49 @@ class GraphEmbedding(nn.Module):
             data:TemporalGraphData=None
         ):
         super().__init__()
+        self.node_dim=node_dim
+        self.latent_dim=latent_dim
         self.data=data
+        self.time_encoder=TimeEncoder(time_dim=time_dim)
         self.attn_layers=torch.nn.ModuleList([
             TemporalAttentionLayer(
-                latent_dim=latent_dim,
+                latent_dim=node_dim if idx==0 else latent_dim,
                 time_dim=time_dim,
                 n_head=n_head
             )
-        for _ in range(n_layer)])
+        for idx in range(n_layer)])
 
-    def compute_embedding(self,batch_tar,n_layer):
+    def compute_embedding(self,
+            batch_tar,
+            batch_t,
+            n_layer):
         """
         Input:
-            batch_tar
+            batch_tar: [B,]
+            batch_t: [B,]
             n_layer
+        Output:
+            updated batch_tar_ft: [B,latent_dim]
         """
+        
+
+
     
-    def aggregate(self):
+    def aggregate(self,
+            tar_ft:torch.Tensor,
+            tar_ts_ft:torch.Tensor,
+            n_ft:torch.Tensor,
+            n_ts_ft:torch.Tensor,
+            n_mask:torch.Tensor,
+            n_layer:int):
         """
         """
+        aggregation_model=self.attn_layers[n_layer-1]
+        output=aggregation_model(
+            tar_ft=tar_ft,
+            tar_ts_ft=tar_ts_ft,
+            n_ft=n_ft,
+            n_ts_ft=n_ts_ft,
+            n_mask=n_mask
+        )
+        return output # [B,latent_dim]
