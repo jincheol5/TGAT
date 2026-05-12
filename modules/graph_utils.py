@@ -10,6 +10,8 @@ class TemporalGraphData:
     node_ft: dict of each node feature
         key: node_id
         value: feature tensor
+        dummy node id: 0
+        dummy node feature: zero tensor
     neighbor: dict of each node's neighbor id list
         key: node_id
         value: list of neighbor node id
