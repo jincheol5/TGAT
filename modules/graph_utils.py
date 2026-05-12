@@ -3,8 +3,7 @@ import numpy as np
 
 """
 To Do List:
-- batch 내의 같은 timestamp 이벤트들에 대해서 구조 정보 어떻게 처리할 지, np.searchsorted 함수 확인해보기 
-
+- 0번 노드 dummy node 처리 -> 항상 이웃 노드 아무것도 없도록
 """
 class TemporalGraphData:
     """
@@ -23,6 +22,9 @@ class TemporalGraphData:
         self.neighbor={}
         self.neighbor_t={}
         self.node_dim=node_dim
+        
+        # init dummy node feature
+        self.node_ft[0]=torch.zeros(self.node_dim)
 
     def update_graph(self,event:tuple):
         """
@@ -43,7 +45,7 @@ class TemporalGraphData:
     def find_temporal_neighbor(self,tar,cut_time):
         """
         """
-        if tar not in self.neighbor:
+        if tar not in self.neighbor or tar==0:
             return [],[]
         t_np=np.array(self.neighbor_t[tar])
         idx=np.searchsorted(t_np,cut_time,side="left")
@@ -55,6 +57,7 @@ class TemporalGraphData:
             batch_tar: [B,]
             batch_t: [B,]
         Output
+            batch_tar_ts: [B,]
             batch_n: [B,N]
             batch_n_t: [B,N]
             batch_n_ts: [B,N], 이웃 노드들과의 timespan
@@ -95,7 +98,14 @@ class TemporalGraphData:
                 batch_n_t[idx]-timestamps_tensor
             )
             batch_n_mask[idx,:n_len]=True
-        return batch_tar_ts,batch_n,batch_n_t,batch_n_ts,batch_n_mask
+
+        return {
+            "batch_tar_ts": batch_tar_ts,
+            "batch_n": batch_n,
+            "batch_n_t": batch_n_t,
+            "batch_n_ts": batch_n_ts,
+            "batch_n_mask" : batch_n_mask
+        }
 
     def get_batch_tar_feature(self,batch_tar):
         """

@@ -31,7 +31,7 @@ class TimeEncoder(nn.Module):
         output=torch.cos(self.w(timespan)) # [B,time_dim] or [B,N,time_dim]
         return output
 
-class TemporalAttentionLayer(nn.Module):
+class TemporalGraphAttention(nn.Module):
     def __init__(self,
             latent_dim:int,
             time_dim:int,
@@ -132,7 +132,7 @@ class TemporalAttentionLayer(nn.Module):
         output=self.FFN(ffn_input) # [B,latent_dim]
         return output
 
-class GraphEmbedding(nn.Module):
+class TemporalGraphEmbedding(nn.Module):
     def __init__(self,
             node_dim:int,
             latent_dim:int,
@@ -147,7 +147,7 @@ class GraphEmbedding(nn.Module):
         self.data=data
         self.time_encoder=TimeEncoder(time_dim=time_dim)
         self.attn_layers=torch.nn.ModuleList([
-            TemporalAttentionLayer(
+            TemporalGraphAttention(
                 latent_dim=node_dim if idx==0 else latent_dim,
                 time_dim=time_dim,
                 n_head=n_head
@@ -166,10 +166,54 @@ class GraphEmbedding(nn.Module):
         Output:
             updated batch_tar_ft: [B,latent_dim]
         """
-        
+        batch_tar_ft=self.data.get_batch_tar_feature(batch_tar=batch_tar)
+        if n_layer==0:
+            return batch_tar_ft
+        else:
+            batch_tar_ft=self.compute_embedding(
+                batch_tar=batch_tar,
+                batch_t=batch_t,
+                n_layer=n_layer-1
+            ) # [B,latent_dim]
 
+            batch_data=self.data.get_batch_data_for_embedding(
+                batch_tar=batch_tar,
+                batch_t=batch_t
+            )
+            batch_tar_ts=batch_data["batch_tar_ts"] # [B,]
+            batch_n=batch_data["batch_n"] # [B,N]
+            batch_n_t=batch_data["batch_n_t"] # [B,N] 
+            batch_n_ts=batch_data["batch_n_ts"] # [B,N]
+            batch_n_mask=batch_data["batch_n_mask"] # [B,N]
 
-    
+            B,N=batch_n.size()
+            batch_n=batch_n.flatten() # [B,N] -> [B x N,]
+            batch_n_t=batch_n_t.flatten() # [B,N] -> [B x N,]
+            n_embedding=self.compute_embedding(
+                batch_tar=batch_n,
+                batch_t=batch_n_t,
+                n_layer=n_layer-1
+            ) # [B x N,latent_dim]
+            
+            ### aggregation
+            # time encoding
+            batch_tar_ts_ft=self.time_encoder(batch_tar_ts) # -> [B,time_dim]
+            batch_n_ts_ft=self.time_encoder(batch_n_ts) # -> [B,N,time_dim]
+
+            # reshape
+            n_embedding=n_embedding.reshape(B,N,-1) # -> [B,N,latent_dim]
+
+            # aggregate
+            updated_batch_tar_ft=self.aggregate(
+                tar_ft=batch_tar_ft,
+                tar_ts_ft=batch_tar_ts_ft,
+                n_ft=n_embedding,
+                n_ts_ft=batch_n_ts_ft,
+                n_mask=batch_n_mask,
+                n_layer=n_layer
+            )
+            return updated_batch_tar_ft
+
     def aggregate(self,
             tar_ft:torch.Tensor,
             tar_ts_ft:torch.Tensor,
