@@ -32,6 +32,9 @@ class TimeEncoder(nn.Module):
         return output
 
 class TemporalGraphAttention(nn.Module):
+    """
+    torch.nn.MultiheadAttention은 embed_dim % num_heads=0 이여야 함
+    """
     def __init__(self,
             latent_dim:int,
             time_dim:int,
@@ -40,7 +43,6 @@ class TemporalGraphAttention(nn.Module):
         super().__init__()
         self.latent_dim=latent_dim
         self.time_dim=time_dim
-        self.latent_dim=latent_dim
         self.qkv_dim=self.latent_dim+self.time_dim
         self.multi_head_attn=nn.MultiheadAttention(
             embed_dim=self.qkv_dim,
@@ -120,8 +122,8 @@ class TemporalGraphAttention(nn.Module):
         ) # attn_output: [1,B,latent_dim+time_dim], attn_weight: [B,1,N]
         attn_output=attn_output.squeeze() # -> [B,latent_dim+time_dim]
 
-        ### 이웃노드가 없는 target node의 attn 결과 0으로 후처리
-        attn_output=attn_output.mask_fill(invalid_neighborhood_mask,0) # mask_fill: mask=True인 위치를 value로 덮어쓰기
+        ### 이웃노드가 없는 target node의 attn 결과 feature를 0 tensor으로 후처리
+        attn_output=attn_output.masked_fill(invalid_neighborhood_mask,0) # mask_fill: mask=True인 위치를 value로 덮어쓰기
 
         ### FFN
         tar_ft=tar_ft.squeeze() # -> [B,latent_dim]
@@ -157,7 +159,8 @@ class TemporalGraphEmbedding(nn.Module):
     def compute_embedding(self,
             batch_tar,
             batch_t,
-            n_layer):
+            n_layer
+        ):
         """
         Input:
             batch_tar: [B,]
@@ -166,8 +169,8 @@ class TemporalGraphEmbedding(nn.Module):
         Output:
             updated batch_tar_ft: [B,latent_dim]
         """
-        batch_tar_ft=self.data.get_batch_tar_feature(batch_tar=batch_tar)
         if n_layer==0:
+            batch_tar_ft=self.data.get_batch_tar_feature(batch_tar=batch_tar)
             return batch_tar_ft
         else:
             batch_tar_ft=self.compute_embedding(
@@ -186,7 +189,7 @@ class TemporalGraphEmbedding(nn.Module):
             batch_n_ts=batch_data["batch_n_ts"] # [B,N]
             batch_n_mask=batch_data["batch_n_mask"] # [B,N]
 
-            B,N=batch_n.size()
+            batch_size,max_n=batch_n.size()
             batch_n=batch_n.flatten() # [B,N] -> [B x N,]
             batch_n_t=batch_n_t.flatten() # [B,N] -> [B x N,]
             n_embedding=self.compute_embedding(
@@ -197,11 +200,13 @@ class TemporalGraphEmbedding(nn.Module):
             
             ### aggregation
             # time encoding
+            batch_tar_ts=batch_tar_ts.unsqueeze(-1) # -> [B,1]
+            batch_n_ts=batch_n_ts.unsqueeze(-1) # -> [B,N,1]
             batch_tar_ts_ft=self.time_encoder(batch_tar_ts) # -> [B,time_dim]
             batch_n_ts_ft=self.time_encoder(batch_n_ts) # -> [B,N,time_dim]
 
             # reshape
-            n_embedding=n_embedding.reshape(B,N,-1) # -> [B,N,latent_dim]
+            n_embedding=n_embedding.reshape(batch_size,max_n,-1) # -> [B,N,latent_dim]
 
             # aggregate
             updated_batch_tar_ft=self.aggregate(

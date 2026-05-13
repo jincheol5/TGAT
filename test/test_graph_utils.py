@@ -1,4 +1,5 @@
 import argparse
+import torch
 from modules import TemporalGraphData
 
 def test_graph_utils(**kwargs):
@@ -8,46 +9,92 @@ def test_graph_utils(**kwargs):
             Test. TemporalGraphData.update_graph()
             """
             eventstream=[
-                (2,6,1),
-                (2,5,2),
-                (0,3,3),
-                (0,2,4),
-                (0,1.5),
-                (1,6,5),
-                (0,3,7),
-                (3,6,7),
-                (3,4,8),
-                (0,2,9)
-            ]
+                (3,7,1),
+                (3,6,2),
+                (1,4,3),
+                (1,3,4),
 
+                (1,2,5),
+                (2,7,5),
+                (1,4,7),
+                (4,7,7),
+
+                (4,5,8),
+                (1,3,9)
+            ]
+            data=TemporalGraphData(node_dim=2)
+            batch_size=4
+            i=0
+            for idx in range(0,len(eventstream),batch_size):
+                batch_events=eventstream[idx:idx+batch_size]
+                data.update_graph(batch_events=batch_events)
+                print(f"<< {i+1} batch result >>")
+                for node_id in data.node_ft.keys():
+                    print(f"node_id: {node_id}")
+                    print(f"node_feature: {data.node_ft[node_id]}")
+                    print(f"node_neighbor: {data.neighbor[node_id]}")
+                    print(f"node_neighbor_t: {data.neighbor_t[node_id]}",end="\n\n")
+                i+=1
 
         case 2:
             """
-            Test. TemporalGraphData.get_data_for_embedding()
+            Test. TemporalGraphData.find_temporal_neighbor()
             """
-            graph=TemporalGraphData(latent_dim=4)
-            batch_events=[
-                (1,2,10), 
-                (2,3,20), 
-                (1,3,25)
+            eventstream=[
+                (3,7,1),
+                (3,6,2),
+                (1,4,3),
+                (1,3,4),
+                (1,2,5),
+                (2,7,5),
+                (1,4,7),
+                (4,7,7),
+                (4,5,8),
+                (1,3,9)
             ]
-            batch_tar_ft,batch_tar_ts,batch_n_ft,batch_n_ts,batch_n_mask=graph.get_data_for_embedding(batch_events)
-            
-            for idx in range(len(batch_events)):
-                print(f"{idx+1} batch tar_ft:")
-                print(f"{batch_tar_ft[idx]}",end="\n\n")
+            data=TemporalGraphData(node_dim=2)
+            data.update_graph(batch_events=eventstream)
+            tar_list=[2,3,7]
+            cut_t_list=[3.0,5.0,8.0]
+            for i in range(3):
+                neighbor,neighbor_t=data.find_temporal_neighbor(tar=tar_list[i],cut_time=cut_t_list[i])
+                print(f"tar: {tar_list[i]}")
+                print(f"neighbor: {neighbor}")
+                print(f"neighbor_t:{neighbor_t}",end="\n\n")
 
-                print(f"{idx+1} batch tar_ts:")
-                print(f"{batch_tar_ts[idx]}",end="\n\n")
+        case 3:
+            """
+            Test. TemporalGraphData.get_batch_data_for_embedding()
+            """
+            eventstream=[
+                (3,7,1),
+                (3,6,2),
+                (1,4,3),
+                (1,3,4),
+                (1,2,5),
+                (2,7,5),
+                (1,4,7),
+                (4,7,7),
+                (4,5,8),
+                (1,3,9)
+            ]
+            data=TemporalGraphData(node_dim=2)
+            data.update_graph(batch_events=eventstream)
+            batch_tar=torch.tensor([2,3,7],dtype=torch.long)
+            batch_t=torch.tensor([3.0,5.0,8.0],dtype=torch.float32)
 
-                print(f"{idx+1} batch n_ft:")
-                print(f"{batch_n_ft[idx]}",end="\n\n")
+            batch_data=data.get_batch_data_for_embedding(batch_tar=batch_tar,batch_t=batch_t)
+            batch_tar_ts=batch_data["batch_tar_ts"] # [B,]
+            batch_n=batch_data["batch_n"] # [B,N]
+            batch_n_t=batch_data["batch_n_t"] # [B,N] 
+            batch_n_ts=batch_data["batch_n_ts"] # [B,N]
+            batch_n_mask=batch_data["batch_n_mask"] # [B,N]
 
-                print(f"{idx+1} batch n_ts:")
-                print(f"{batch_n_ts[idx]}",end="\n\n")
-
-                print(f"{idx+1} batch n_mask:")
-                print(f"{batch_n_mask[idx]}",end="\n\n")
+            print(f"batch_tar_ts: {batch_tar_ts}")
+            print(f"batch_n: {batch_n}")
+            print(f"batch_n_t: {batch_n_t}")
+            print(f"batch_n_ts: {batch_n_ts}")
+            print(f"batch_n_mask: {batch_n_mask}")
 
 if __name__=="__main__":
     """

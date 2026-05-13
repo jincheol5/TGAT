@@ -27,27 +27,30 @@ class TemporalGraphData:
         
         # init dummy node feature
         self.node_ft[0]=torch.zeros(self.node_dim)
+        self.neighbor[0]=[]
+        self.neighbor_t[0]=[]
 
-    def update_graph(self,event:tuple):
+    def update_graph(self,batch_events:list):
         """
         Input:
-            event: tuple (src,tar,timestamp)
+            event: List of tuple (src,tar,timestamp)
         """
-        src,tar,timestamp=event
-        if src not in self.node_ft:
-            self.node_ft[src]=torch.ones(self.node_dim)
-        if tar not in self.node_ft:
-            self.node_ft[tar]=torch.ones(self.node_dim)
-        if tar not in self.neighbor:
-            self.neighbor[tar]=[]
-            self.neighbor_t[tar]=[]
-        self.neighbor[tar].append(src)
-        self.neighbor_t[tar].append(timestamp)
+        for event in batch_events:
+            src,tar,timestamp=event
+            if src not in self.node_ft:
+                self.node_ft[src]=torch.ones(self.node_dim)
+            if tar not in self.node_ft:
+                self.node_ft[tar]=torch.ones(self.node_dim)
+            if tar not in self.neighbor:
+                self.neighbor[tar]=[]
+                self.neighbor_t[tar]=[]
+            self.neighbor[tar].append(src)
+            self.neighbor_t[tar].append(timestamp)
 
     def find_temporal_neighbor(self,tar,cut_time):
         """
         """
-        if tar not in self.neighbor or tar==0:
+        if tar not in self.neighbor:
             return [],[]
         t_np=np.array(self.neighbor_t[tar])
         idx=np.searchsorted(t_np,cut_time,side="left")
@@ -97,7 +100,7 @@ class TemporalGraphData:
             batch_n_t[idx,:n_len]=timestamps_tensor
 
             batch_n_ts[idx,:n_len]=torch.abs(
-                batch_n_t[idx]-timestamps_tensor
+                batch_t[idx]-timestamps_tensor # broadcasting
             )
             batch_n_mask[idx,:n_len]=True
 
